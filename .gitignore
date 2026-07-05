@@ -1,0 +1,41 @@
+# Build outputs
+bin/
+obj/
+dist/
+release/
+releases/
+TrayPocket.exe
+*.exe
+*.dll
+*.pdb
+*.cache
+*.log
+*.tmp
+*.TMP
+CSC*.TMP
+*.zip
+*.7z
+*.rar
+*.msi
+
+# IDE and local machine files
+.git/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Local config, secrets, and private data
+.env
+.env.*
+*.local
+secrets.*
+*.key
+*.pem
+*.pfx
+*.db
+*.sqlite
+*.sqlite3
+
+# 构建产物不纳入源码仓库；需要时可通过 build.ps1 重新生成。

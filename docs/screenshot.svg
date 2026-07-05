@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540" role="img" aria-labelledby="title desc">
+  <title id="title">TrayPocket 托盘菜单预览</title>
+  <desc id="desc">A preview of the TrayPocket Windows tray menu and managed app icons.</desc>
+  <rect width="960" height="540" fill="#f3f5f7"/>
+  <rect x="0" y="466" width="960" height="74" fill="#eef1f4"/>
+  <rect x="704" y="484" width="226" height="36" rx="6" fill="#ffffff" stroke="#ccd3dc"/>
+  <circle cx="736" cy="502" r="9" fill="#2563eb"/>
+  <circle cx="764" cy="502" r="9" fill="#16a34a"/>
+  <circle cx="792" cy="502" r="9" fill="#f59e0b"/>
+  <text x="824" y="507" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="15" fill="#2f3a46">TrayPocket</text>
+
+  <rect x="548" y="74" width="318" height="342" rx="8" fill="#ffffff" stroke="#c5ced8"/>
+  <rect x="548" y="74" width="318" height="44" rx="8" fill="#f8fafc"/>
+  <text x="574" y="102" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="18" font-weight="600" fill="#111827">TrayPocket</text>
+
+  <g font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="15" fill="#111827">
+    <text x="578" y="149">选择程序并托盘运行...</text>
+    <text x="578" y="187">最近程序一键托盘运行</text>
+    <line x1="566" y1="210" x2="848" y2="210" stroke="#e5e7eb"/>
+    <text x="578" y="238">隐藏当前窗口到托盘 (Win+Shift+Z)</text>
+    <text x="578" y="276">恢复全部隐藏窗口 (2)</text>
+    <text x="578" y="314">当前托管项目</text>
+    <line x1="566" y1="337" x2="848" y2="337" stroke="#e5e7eb"/>
+    <text x="578" y="365">设置  &gt;</text>
+    <text x="578" y="403">退出并恢复隐藏窗口</text>
+  </g>
+
+  <rect x="236" y="344" width="282" height="158" rx="8" fill="#ffffff" stroke="#c5ced8"/>
+  <g font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="15" fill="#111827">
+    <text x="262" y="382">开机自动启动 TrayPocket</text>
+    <text x="262" y="421">隐藏程序时播放提示音</text>
+    <text x="262" y="460">菜单语言  &gt;</text>
+  </g>
+
+  <rect x="102" y="88" width="346" height="254" rx="8" fill="#ffffff" stroke="#c5ced8"/>
+  <text x="132" y="132" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="30" font-weight="700" fill="#111827">TrayPocket</text>
+  <text x="132" y="170" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="17" fill="#4b5563">把普通桌面程序收进系统托盘。</text>
+  <rect x="132" y="212" width="96" height="72" rx="6" fill="#eff6ff" stroke="#bfdbfe"/>
+  <rect x="250" y="212" width="96" height="72" rx="6" fill="#f0fdf4" stroke="#bbf7d0"/>
+  <rect x="368" y="212" width="50" height="72" rx="6" fill="#fff7ed" stroke="#fed7aa"/>
+  <text x="152" y="253" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#1d4ed8">隐藏</text>
+  <text x="270" y="253" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#15803d">恢复</text>
+  <text x="381" y="253" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#c2410c">启动</text>
+  <text x="132" y="316" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#6b7280">菜单预览图，真实界面以 Windows 托盘为准。</text>
+</svg>
