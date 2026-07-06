@@ -1,7 +1,11 @@
 # 更新记录
 
-## Unreleased
+## 0.3.0 - 2026-07-06
 
+- 新增：Python 版实现 `src/traypocket.py`，使用标准库 `ctypes` 调用 Windows API。
+- 新增：`run-python.ps1`，可直接启动 Python 版 TrayPocket。
+- 新增：`build-python-package.ps1`，用于生成 Python 版发布压缩包。
+- 调整：README 将 Python 版作为当前主线实现说明，保留 C# 版作为早期实现。
 - 新增：托盘菜单增加“设置”子菜单。
 - 新增：可在设置里开启或关闭开机自动启动。
 - 新增：可设置隐藏窗口时是否播放系统提示音，配置保存到 `%APPDATA%\TrayPocket\settings.txt`。

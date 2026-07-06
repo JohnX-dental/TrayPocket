@@ -2,7 +2,7 @@
 
 TrayPocket 是一个 Windows 系统托盘工具，用来把需要长期后台运行的普通桌面程序“一键收进右下角小图标”。
 
-它的交互灵感来自 [fcFn/traymond](https://github.com/fcFn/traymond)：把窗口隐藏到托盘，双击托盘图标恢复窗口。TrayPocket 在这个思路上重新用 C# WinForms 实现，并加入了更适合日常使用的“选择程序后直接托盘运行”和“最近程序一键运行”。
+它的交互灵感来自 [fcFn/traymond](https://github.com/fcFn/traymond)：把窗口隐藏到托盘，双击托盘图标恢复窗口。TrayPocket 现在提供 Python 版实现，并保留早期 C# WinForms 实现作为参考。
 
 ![TrayPocket 托盘菜单预览](docs/screenshot.svg)
 
@@ -19,9 +19,37 @@ TrayPocket 是一个 Windows 系统托盘工具，用来把需要长期后台运
 
 ## 下载和安装
 
-推荐从 GitHub Releases 下载 `TrayPocket.exe`，放到任意你喜欢的文件夹后双击运行。
+推荐从 GitHub Releases 下载 Python 版压缩包 `TrayPocket-python-v0.3.0-windows.zip`，解压后运行：
 
-如果你想从源码构建，在项目目录运行：
+```powershell
+PowerShell -ExecutionPolicy Bypass -File .\run-python.ps1
+```
+
+这版需要本机安装 Python 3.10+。
+
+如果你只想使用早期免安装 exe，也可以下载 `TrayPocket.exe`，放到任意你喜欢的文件夹后双击运行。
+
+如果你想运行 Python 版，请先安装 Python 3.10+，然后在项目目录运行：
+
+```powershell
+PowerShell -ExecutionPolicy Bypass -File .\run-python.ps1
+```
+
+也可以直接运行：
+
+```powershell
+python .\src\traypocket.py
+```
+
+Python 版只使用 Python 标准库，不依赖第三方包。
+
+生成 Python 版发布压缩包：
+
+```powershell
+PowerShell -ExecutionPolicy Bypass -File .\build-python-package.ps1
+```
+
+如果你想从早期 C# 源码构建 exe，在项目目录运行：
 
 ```powershell
 PowerShell -ExecutionPolicy Bypass -File .\build.ps1
@@ -63,11 +91,13 @@ TrayPocket 不需要安装程序。第一次运行时，如果 Windows 出现安
 - **中文界面和中文注释**：更适合中文用户继续修改和二次开发。
 - **无需 .NET SDK 构建**：使用 Windows 自带的 .NET Framework C# 编译器即可生成 exe。
 
-## 构建
+## 构建和源码
 
-本项目是单文件 C# WinForms 程序，使用 Windows 自带的 .NET Framework C# 编译器构建，不要求安装 .NET SDK。
+当前主线实现是 `src/traypocket.py`，这是一个纯标准库 Python 程序，直接调用 Windows API 实现托盘图标、菜单、热键和窗口隐藏。
 
-在项目目录运行：
+仓库仍保留 `src/TrayPocket.cs`，它是早期 C# WinForms 实现，使用 Windows 自带的 .NET Framework C# 编译器构建，不要求安装 .NET SDK。
+
+C# 版构建命令：
 
 ```powershell
 PowerShell -ExecutionPolicy Bypass -File .\build.ps1
