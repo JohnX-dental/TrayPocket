@@ -2,7 +2,10 @@
 __pycache__/
 *.pyc
 .venv/
+.tmp-pip/
 .mypy_cache/
+build/
+*.spec
 bin/
 obj/
 dist/

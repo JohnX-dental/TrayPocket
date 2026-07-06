@@ -1,5 +1,10 @@
 # 更新记录
 
+## 0.3.1 - 2026-07-06
+
+- 新增：`build-python-exe.ps1`，使用 PyInstaller 将 Python 版打包为独立 Windows exe。
+- 发布：提供 `TrayPocket-python-v0.3.1.exe`，用户无需安装 Python 即可运行。
+
 ## 0.3.0 - 2026-07-06
 
 - 新增：Python 版实现 `src/traypocket.py`，使用标准库 `ctypes` 调用 Windows API。
