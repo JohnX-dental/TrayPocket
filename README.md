@@ -24,10 +24,10 @@ TrayPocket 是一个 Windows 系统托盘工具，用来把需要长期后台运
 
 ## 下载和安装
 
-推荐从 GitHub Releases 下载独立可执行文件 `TrayPocket-python-v0.3.4.exe`，下载后双击运行即可，不需要安装 Python。
+推荐从 GitHub Releases 下载独立可执行文件 `TrayPocket-python-v0.3.5.exe`，下载后双击运行即可，不需要安装 Python。
 > 请启动 `dist` 中的 Python 版文件；旧版 C# 可执行文件已移至 `legacy\TrayPocket-legacy.exe`，不包含“已收纳窗口”面板。
 
-如果你想查看或运行源码，也可以下载 Python 版压缩包 `TrayPocket-python-v0.3.4-windows.zip`，解压后运行：
+如果你想查看或运行源码，也可以下载 Python 版压缩包 `TrayPocket-python-v0.3.5-windows.zip`，解压后运行：
 
 ```powershell
 PowerShell -ExecutionPolicy Bypass -File .\run-python.ps1
