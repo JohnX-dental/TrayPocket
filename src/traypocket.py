@@ -17,22 +17,27 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 import tkinter as tk
 import winsound
 import winreg
 from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
-from tkinter import filedialog
+from tkinter import filedialog, ttk
 
 
 APP_NAME = "TrayPocket"
+APP_VERSION = "0.3.5"
 WINDOW_CLASS = "TrayPocketPythonHiddenWindow"
 MUTEX_NAME = "TrayPocket.Python.SingleInstance.Mutex"
 CONFIG_FILE_NAME = "apps.txt"
 SETTINGS_FILE_NAME = "settings.txt"
+ERROR_LOG_FILE_NAME = "error.log"
+ICON_FILE_NAME = "traypocket-icon.ico"
 PLAY_SOUND_ON_HIDE_KEY = "PlaySoundOnHide"
 MENU_LANGUAGE_KEY = "MenuLanguage"
+SHOW_ITEM_TRAY_ICONS_KEY = "ShowItemTrayIcons"
 CHINESE_MENU_LANGUAGE = "zh-CN"
 RECENT_APP_LIMIT = 20
 
@@ -44,6 +49,7 @@ WM_COPYDATA = 0x004A
 WM_COMMAND = 0x0111
 WM_DESTROY = 0x0002
 WM_HOTKEY = 0x0312
+WM_TIMER = 0x0113
 WM_RBUTTONUP = 0x0205
 WM_LBUTTONDBLCLK = 0x0203
 
@@ -55,6 +61,9 @@ NIF_ICON = 0x00000002
 NIF_TIP = 0x00000004
 NIF_INFO = 0x00000010
 NIIF_INFO = 0x00000001
+IMAGE_ICON = 1
+LR_LOADFROMFILE = 0x0010
+LR_DEFAULTSIZE = 0x0040
 
 MF_STRING = 0x00000000
 MF_GRAYED = 0x00000001
@@ -73,6 +82,10 @@ MOD_WIN = 0x0008
 MOD_NOREPEAT = 0x4000
 VK_Z = 0x5A
 HOTKEY_ID = 0x5450
+STATE_TIMER_ID = 0x5451
+STATE_TIMER_INTERVAL_MS = 100
+MONITOR_INTERVAL_SECONDS = 1.0
+STILL_ACTIVE = 259
 
 ERROR_ALREADY_EXISTS = 183
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
@@ -166,6 +179,8 @@ user32.TranslateMessage.argtypes = [ctypes.POINTER(wintypes.MSG)]
 user32.DispatchMessageW.argtypes = [ctypes.POINTER(wintypes.MSG)]
 user32.LoadIconW.argtypes = [wintypes.HINSTANCE, wintypes.LPCWSTR]
 user32.LoadIconW.restype = wintypes.HICON
+user32.LoadImageW.argtypes = [wintypes.HINSTANCE, wintypes.LPCWSTR, wintypes.UINT, ctypes.c_int, ctypes.c_int, wintypes.UINT]
+user32.LoadImageW.restype = wintypes.HANDLE
 user32.DestroyIcon.argtypes = [wintypes.HICON]
 user32.GetCursorPos.argtypes = [ctypes.POINTER(POINT)]
 user32.SetForegroundWindow.argtypes = [wintypes.HWND]
@@ -185,6 +200,10 @@ user32.DestroyMenu.argtypes = [wintypes.HMENU]
 user32.RegisterHotKey.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.UINT, wintypes.UINT]
 user32.UnregisterHotKey.argtypes = [wintypes.HWND, ctypes.c_int]
 user32.GetForegroundWindow.restype = wintypes.HWND
+user32.SetTimer.argtypes = [wintypes.HWND, ctypes.c_size_t, wintypes.UINT, wintypes.LPVOID]
+user32.SetTimer.restype = ctypes.c_size_t
+user32.KillTimer.argtypes = [wintypes.HWND, ctypes.c_size_t]
+user32.KillTimer.restype = wintypes.BOOL
 user32.GetDesktopWindow.restype = wintypes.HWND
 user32.GetShellWindow.restype = wintypes.HWND
 user32.IsWindow.argtypes = [wintypes.HWND]
@@ -216,6 +235,8 @@ kernel32.GetLastError.restype = wintypes.DWORD
 kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
 kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
 kernel32.OpenProcess.restype = wintypes.HANDLE
+kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+kernel32.GetExitCodeProcess.restype = wintypes.BOOL
 kernel32.QueryFullProcessImageNameW.argtypes = [
     wintypes.HANDLE,
     wintypes.DWORD,
@@ -223,6 +244,16 @@ kernel32.QueryFullProcessImageNameW.argtypes = [
     ctypes.POINTER(wintypes.DWORD),
 ]
 kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
+
+
+def load_app_icon() -> int:
+    root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
+    icon_path = root / "assets" / ICON_FILE_NAME
+    if icon_path.exists():
+        icon = user32.LoadImageW(None, str(icon_path), IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE)
+        if icon:
+            return icon
+    return user32.LoadIconW(None, ctypes.c_wchar_p(32512))
 
 
 @dataclass
@@ -234,6 +265,7 @@ class TrayedItem:
     title: str
     started_by_traypocket: bool
     hicon: int
+    process_id: int = 0
 
 
 class TrayPocketApp:
@@ -242,7 +274,7 @@ class TrayPocketApp:
         self.hinstance = kernel32.GetModuleHandleW(None)
         self.hwnd = None
         self.wndproc_ref = WNDPROC(self._wndproc)
-        self.main_icon = user32.LoadIconW(None, ctypes.c_wchar_p(32512))
+        self.main_icon = load_app_icon()
         self.items: list[TrayedItem] = []
         self.recent_apps: list[str] = []
         self.pending_results: dict[int, tuple[subprocess.Popen | None, str, int]] = {}
@@ -254,8 +286,17 @@ class TrayPocketApp:
         self.config_dir = Path(os.environ.get("APPDATA", str(Path.home()))) / APP_NAME
         self.config_file = self.config_dir / CONFIG_FILE_NAME
         self.settings_file = self.config_dir / SETTINGS_FILE_NAME
+        self.error_log_file = self.config_dir / ERROR_LOG_FILE_NAME
         self.play_sound_on_hide = False
         self.menu_language = CHINESE_MENU_LANGUAGE
+        self.show_item_tray_icons = False
+        self.items_revision = 0
+        self.panel_revision = -1
+        self.panel_root: tk.Tk | None = None
+        self.panel_count_label: ttk.Label | None = None
+        self.panel_canvas: tk.Canvas | None = None
+        self.panel_items_frame: ttk.Frame | None = None
+        self.last_monitor_at = 0.0
         self.disposed = False
 
         self.load_recent_apps()
@@ -263,6 +304,7 @@ class TrayPocketApp:
         self._create_hidden_window()
         self._add_main_tray_icon()
         self._register_hotkey()
+        self._start_state_timer()
 
     def run(self) -> None:
         for path in self.startup_args:
@@ -308,6 +350,42 @@ class TrayPocketApp:
         if not ok:
             self.show_balloon("Win+Shift+Z 已被占用。托盘菜单仍可正常使用。")
 
+    def _start_state_timer(self) -> None:
+        if not user32.SetTimer(self.hwnd, STATE_TIMER_ID, STATE_TIMER_INTERVAL_MS, None):
+            raise ctypes.WinError(ctypes.get_last_error())
+
+    def _service_state_timer(self) -> None:
+        now = time.monotonic()
+        if now - self.last_monitor_at >= MONITOR_INTERVAL_SECONDS:
+            self.last_monitor_at = now
+            self.monitor_items()
+
+        if self.panel_root is None:
+            return
+        try:
+            if self.panel_revision != self.items_revision:
+                self._refresh_collection_panel()
+            self.panel_root.update_idletasks()
+            self.panel_root.update()
+        except tk.TclError:
+            self.panel_root = None
+            self.panel_count_label = None
+            self.panel_canvas = None
+            self.panel_items_frame = None
+
+    def log_error(self, context: str, exc: Exception) -> None:
+        try:
+            self.config_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+            details = traceback.format_exc()
+            with self.error_log_file.open("a", encoding="utf-8") as handle:
+                handle.write(f"[{timestamp}] {context}: {exc!r}\n{details}\n")
+        except OSError:
+            pass
+
+    def mark_items_changed(self) -> None:
+        self.items_revision += 1
+
     def _base_notify_data(self, icon_id: int) -> NOTIFYICONDATAW:
         nid = NOTIFYICONDATAW()
         nid.cbSize = ctypes.sizeof(NOTIFYICONDATAW)
@@ -320,10 +398,11 @@ class TrayPocketApp:
         nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP
         nid.uCallbackMessage = WM_TRAYICON
         nid.hIcon = self.main_icon
-        nid.szTip = APP_NAME
+        nid.szTip = f"{APP_NAME} v{APP_VERSION}"
         shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(nid))
 
     def _add_item_tray_icon(self, item: TrayedItem) -> None:
+        self._remove_tray_icon(item.item_id)
         nid = self._base_notify_data(item.item_id)
         nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP
         nid.uCallbackMessage = WM_TRAYICON
@@ -336,15 +415,27 @@ class TrayPocketApp:
         shell32.Shell_NotifyIconW(NIM_DELETE, ctypes.byref(nid))
 
     def _wndproc(self, hwnd: int, msg: int, wparam: int, lparam: int) -> int:
+        try:
+            return self._dispatch_wndproc(hwnd, msg, wparam, lparam)
+        except Exception as exc:
+            self.log_error(f"window message 0x{int(msg):04X}", exc)
+            return 0
+
+    def _dispatch_wndproc(self, hwnd: int, msg: int, wparam: int, lparam: int) -> int:
+        if msg == WM_TIMER and int(wparam) == STATE_TIMER_ID:
+            self._service_state_timer()
+            return 0
+
         if msg == WM_TRAYICON:
             icon_id = int(wparam)
             event = int(lparam)
             if event == WM_RBUTTONUP:
                 self.show_menu_for_icon(icon_id)
                 return 0
+
             if event == WM_LBUTTONDBLCLK:
                 if icon_id == MAIN_ICON_ID:
-                    self.select_and_start_program()
+                    self.show_collection_panel()
                 else:
                     item = self.find_item_by_id(icon_id)
                     if item:
@@ -382,6 +473,7 @@ class TrayPocketApp:
         menu = user32.CreatePopupMenu()
         self.menu_actions = {}
         self.next_command_id = 1000
+        self._append_action(menu, f"打开已收纳窗口 ({len(self.items)})", self.show_collection_panel)
 
         self._append_action(menu, "选择程序并托盘运行...", self.select_and_start_program)
         recent_menu = user32.CreatePopupMenu()
@@ -414,6 +506,7 @@ class TrayPocketApp:
         settings_menu = user32.CreatePopupMenu()
         self._append_action(settings_menu, "开机自动启动 TrayPocket", self.toggle_startup, checked=is_startup_enabled())
         self._append_action(settings_menu, "隐藏程序时播放提示音", self.toggle_hide_sound, checked=self.play_sound_on_hide)
+        self._append_action(settings_menu, "每个项目显示独立托盘图标", self.toggle_item_tray_icons, checked=self.show_item_tray_icons)
         language_menu = user32.CreatePopupMenu()
         self._append_action(language_menu, "中文（简体）", self.use_chinese_menu, checked=self.is_chinese_menu())
         self._append_submenu(settings_menu, "菜单语言", language_menu)
@@ -426,6 +519,169 @@ class TrayPocketApp:
 
         self._track_and_dispatch_menu(menu)
         user32.DestroyMenu(menu)
+    def show_collection_panel(self) -> None:
+        if self.panel_root is not None:
+            try:
+                self.panel_root.deiconify()
+                self.panel_root.lift()
+                self.panel_root.focus_force()
+                self.panel_revision = -1
+                self._refresh_collection_panel()
+                return
+            except tk.TclError:
+                self.panel_root = None
+
+        try:
+            root = tk.Tk()
+            root.withdraw()
+            root.title(f"{APP_NAME} - 已收纳窗口")
+            root.minsize(460, 260)
+            root.protocol("WM_DELETE_WINDOW", self.hide_collection_panel)
+            root.bind("<Escape>", lambda _event: self.hide_collection_panel())
+            try:
+                root.attributes("-toolwindow", True)
+            except tk.TclError:
+                pass
+
+            outer = ttk.Frame(root, padding=12)
+            outer.pack(fill="both", expand=True)
+
+            header = ttk.Frame(outer)
+            header.pack(fill="x", pady=(0, 10))
+            ttk.Label(header, text="已收纳窗口", font=("Segoe UI", 14, "bold")).pack(side="left")
+            self.panel_count_label = ttk.Label(header, text="0 项")
+            self.panel_count_label.pack(side="right")
+
+            list_host = ttk.Frame(outer)
+            list_host.pack(fill="both", expand=True)
+            canvas = tk.Canvas(list_host, highlightthickness=0, borderwidth=0)
+            scrollbar = ttk.Scrollbar(list_host, orient="vertical", command=canvas.yview)
+            items_frame = ttk.Frame(canvas)
+            frame_window = canvas.create_window((0, 0), window=items_frame, anchor="nw")
+            canvas.configure(yscrollcommand=scrollbar.set)
+            items_frame.bind(
+                "<Configure>",
+                lambda _event: canvas.configure(scrollregion=canvas.bbox("all")),
+            )
+            canvas.bind(
+                "<Configure>",
+                lambda event: canvas.itemconfigure(frame_window, width=event.width),
+            )
+            canvas.pack(side="left", fill="both", expand=True)
+            scrollbar.pack(side="right", fill="y")
+
+            footer = ttk.Frame(outer)
+            footer.pack(fill="x", pady=(10, 0))
+            ttk.Button(footer, text="选择程序…", command=self.select_and_start_program).pack(side="left")
+            ttk.Button(footer, text="恢复全部", command=self.restore_all_hidden_windows).pack(side="left", padx=8)
+            ttk.Button(footer, text="刷新", command=self.refresh_collection_panel).pack(side="right")
+
+            self.panel_root = root
+            self.panel_canvas = canvas
+            self.panel_items_frame = items_frame
+            self.panel_revision = -1
+            self._refresh_collection_panel()
+
+            root.update_idletasks()
+            width = 520
+            height = min(520, max(280, 150 + len(self.items) * 64))
+            x = max(0, root.winfo_screenwidth() - width - 24)
+            y = max(0, root.winfo_screenheight() - height - 72)
+            root.geometry(f"{width}x{height}+{x}+{y}")
+            root.deiconify()
+            root.lift()
+            root.focus_force()
+        except Exception as exc:
+            self.panel_root = None
+            self.show_balloon(f"无法打开已收纳窗口面板：{exc}")
+
+    def hide_collection_panel(self) -> None:
+        if self.panel_root is None:
+            return
+        try:
+            self.panel_root.withdraw()
+        except tk.TclError:
+            self.panel_root = None
+
+    def close_collection_panel(self) -> None:
+        if self.panel_root is None:
+            return
+        try:
+            self.panel_root.destroy()
+        except tk.TclError:
+            pass
+        self.panel_root = None
+        self.panel_count_label = None
+        self.panel_canvas = None
+        self.panel_items_frame = None
+
+    def refresh_collection_panel(self) -> None:
+        self.monitor_items()
+        self.panel_revision = -1
+        self._refresh_collection_panel()
+
+    def _refresh_collection_panel(self) -> None:
+        if self.panel_root is None or self.panel_items_frame is None:
+            return
+        try:
+            for child in self.panel_items_frame.winfo_children():
+                child.destroy()
+
+            if self.panel_count_label is not None:
+                self.panel_count_label.configure(text=f"{len(self.items)} 项")
+
+            if not self.items:
+                empty = ttk.Label(
+                    self.panel_items_frame,
+                    text="暂无已收纳窗口\n按 Win+Shift+Z 收纳当前窗口",
+                    anchor="center",
+                    justify="center",
+                    padding=30,
+                )
+                empty.pack(fill="both", expand=True)
+            else:
+                for item in list(self.items):
+                    row = ttk.Frame(self.panel_items_frame, padding=(8, 8))
+                    row.pack(fill="x", pady=2)
+                    row.columnconfigure(0, weight=1)
+
+                    title = item.title or filename_or_fallback(item.executable_path, "未命名窗口")
+                    ttk.Label(row, text=title, font=("Segoe UI", 10, "bold")).grid(
+                        row=0, column=0, sticky="w"
+                    )
+                    subtitle = f"{self._panel_item_status(item)} · {filename_or_fallback(item.executable_path, '未知程序')}"
+                    ttk.Label(row, text=subtitle).grid(row=1, column=0, sticky="w", pady=(3, 0))
+                    restore_text = "恢复" if item.window else "查找/聚焦"
+                    secondary_text = "结束" if not item.window and item.process is not None else "移除"
+                    secondary_action = (
+                        (lambda managed=item: self.stop_process_item(managed))
+                        if not item.window and item.process is not None
+                        else (lambda managed=item: self.dispose_item(managed))
+                    )
+                    ttk.Button(
+                        row,
+                        text=restore_text,
+                        command=lambda managed=item: self.restore_or_focus_item(managed),
+                    ).grid(row=0, column=1, rowspan=2, padx=(8, 4))
+                    ttk.Button(
+                        row,
+                        text=secondary_text,
+                        command=secondary_action,
+                    ).grid(row=0, column=2, rowspan=2)
+                    ttk.Separator(self.panel_items_frame, orient="horizontal").pack(fill="x")
+
+            self.panel_revision = self.items_revision
+            if self.panel_canvas is not None:
+                self.panel_canvas.configure(scrollregion=self.panel_canvas.bbox("all"))
+        except tk.TclError:
+            self.panel_root = None
+
+    def _panel_item_status(self, item: TrayedItem) -> str:
+        if item.window and user32.IsWindow(item.window):
+            return "已隐藏" if not user32.IsWindowVisible(item.window) else "重新收纳中"
+        if self._item_process_alive(item):
+            return "等待窗口"
+        return "已结束"
 
     def show_item_menu(self, item: TrayedItem) -> None:
         menu = user32.CreatePopupMenu()
@@ -478,20 +734,28 @@ class TrayPocketApp:
             action()
 
     def select_and_start_program(self) -> None:
+        temporary_root = self.panel_root is None
+        root = self.panel_root
         try:
-            root = tk.Tk()
-            root.withdraw()
-            root.attributes("-topmost", True)
+            if root is None:
+                root = tk.Tk()
+                root.withdraw()
+                root.attributes("-topmost", True)
             path = filedialog.askopenfilename(
+                parent=root,
                 title="选择要托盘运行的程序",
                 filetypes=[("程序", "*.exe"), ("所有文件", "*.*")],
             )
-            root.destroy()
             if path:
                 self.start_program_to_tray(path)
         except Exception as exc:
             self.show_balloon(f"无法打开程序选择窗口：{exc}")
-
+        finally:
+            if temporary_root and root is not None:
+                try:
+                    root.destroy()
+                except tk.TclError:
+                    pass
     def start_program_to_tray(self, path: str) -> None:
         executable_path = os.path.expandvars(path.strip().strip('"'))
         if not Path(executable_path).exists():
@@ -559,11 +823,24 @@ class TrayPocketApp:
         executable_path: str,
         started_by_traypocket: bool,
     ) -> None:
+        exact_item = self.find_item_by_window(window)
+        if exact_item is not None:
+            user32.ShowWindow(window, SW_HIDE)
+            return
         if not self.can_hide_window(window):
             self.show_balloon("这个窗口不能隐藏到托盘。")
             return
 
+        process_id = process.pid if process is not None else get_window_process_id(window)
         title = get_window_title(window) or filename_or_fallback(executable_path, "隐藏窗口")
+        existing = self.find_reusable_item(process_id)
+        if existing is not None:
+            self._update_item_window(existing, window, process, process_id, executable_path, title)
+            user32.ShowWindow(window, SW_HIDE)
+            self.play_hide_sound()
+            self.show_balloon(f"已重新收纳：{existing.title}")
+            return
+
         item = TrayedItem(
             item_id=self.next_item_id,
             window=window,
@@ -572,15 +849,43 @@ class TrayPocketApp:
             title=title,
             started_by_traypocket=started_by_traypocket,
             hicon=extract_icon(executable_path),
+            process_id=process_id,
         )
         self.next_item_id += 1
         self.items.append(item)
-        self._add_item_tray_icon(item)
+        if self.show_item_tray_icons:
+            self._add_item_tray_icon(item)
+        self.mark_items_changed()
         user32.ShowWindow(window, SW_HIDE)
         self.play_hide_sound()
-        self.show_balloon(f"已隐藏到托盘：{item.title}")
+        self.show_balloon(f"已隐藏到 TrayPocket：{item.title}")
+
+    def _update_item_window(
+        self,
+        item: TrayedItem,
+        window: int,
+        process: subprocess.Popen | None,
+        process_id: int,
+        executable_path: str,
+        title: str,
+    ) -> None:
+        item.window = window
+        item.process_id = process_id
+        if process is not None:
+            item.process = process
+        if executable_path:
+            item.executable_path = executable_path
+        if title:
+            item.title = title
+        if self.show_item_tray_icons:
+            self._remove_tray_icon(item.item_id)
+            self._add_item_tray_icon(item)
+        self.mark_items_changed()
 
     def add_background_process_to_tray(self, process: subprocess.Popen, executable_path: str) -> None:
+        existing = self.find_item_by_process(process.pid)
+        if existing is not None:
+            return
         item = TrayedItem(
             item_id=self.next_item_id,
             window=0,
@@ -589,10 +894,13 @@ class TrayPocketApp:
             title=filename_or_fallback(executable_path, "后台进程"),
             started_by_traypocket=True,
             hicon=extract_icon(executable_path),
+            process_id=process.pid,
         )
         self.next_item_id += 1
         self.items.append(item)
-        self._add_item_tray_icon(item)
+        if self.show_item_tray_icons:
+            self._add_item_tray_icon(item)
+        self.mark_items_changed()
         self.show_balloon(f"已作为后台进程托管：{item.title}")
 
     def restore_or_focus_item(self, item: TrayedItem) -> None:
@@ -605,14 +913,13 @@ class TrayPocketApp:
             self.dispose_item(item)
             return
 
-        window = 0
-        if item.process:
-            window = find_main_window_for_pid(item.process.pid)
+        process_id = item.process_id or (item.process.pid if item.process else 0)
+        window = find_main_window_for_pid(process_id) if process_id else 0
         if window:
-            item.window = window
             user32.ShowWindow(window, SW_RESTORE)
             user32.ShowWindow(window, SW_SHOW)
             user32.SetForegroundWindow(window)
+            self.dispose_item(item)
         else:
             self.show_balloon(f"没有找到可见窗口：{item.title}")
 
@@ -639,6 +946,48 @@ class TrayPocketApp:
             return
         self.dispose_item(item)
 
+    def monitor_items(self) -> None:
+        for item in list(self.items):
+            if item.window and user32.IsWindow(item.window):
+                if user32.IsWindowVisible(item.window):
+                    user32.ShowWindow(item.window, SW_HIDE)
+                    self.mark_items_changed()
+                continue
+
+            process_id = item.process_id or (item.process.pid if item.process else 0)
+            replacement = find_main_window_for_pid(process_id) if process_id and self._item_process_alive(item) else 0
+            if replacement:
+                duplicate = self.find_item_by_window(replacement)
+                if duplicate is not None and duplicate is not item:
+                    self.dispose_item(item)
+                    continue
+                self._update_item_window(
+                    item,
+                    replacement,
+                    item.process,
+                    process_id,
+                    item.executable_path,
+                    get_window_title(replacement) or item.title,
+                )
+                user32.ShowWindow(replacement, SW_HIDE)
+                continue
+
+            if not self._item_process_alive(item):
+                self.dispose_item(item)
+                continue
+
+            if item.window:
+                item.window = 0
+                self.mark_items_changed()
+
+    def _item_process_alive(self, item: TrayedItem) -> bool:
+        if item.process is not None:
+            try:
+                return item.process.poll() is None
+            except Exception:
+                return False
+        return is_process_running(item.process_id)
+
     def dispose_item(self, item: TrayedItem) -> None:
         if item not in self.items:
             return
@@ -646,6 +995,7 @@ class TrayPocketApp:
         self._remove_tray_icon(item.item_id)
         if item.hicon and item.hicon != self.main_icon:
             user32.DestroyIcon(item.hicon)
+        self.mark_items_changed()
 
     def find_item_by_id(self, item_id: int) -> TrayedItem | None:
         for item in self.items:
@@ -659,9 +1009,26 @@ class TrayPocketApp:
                 return item
         return None
 
-    def hidden_window_count(self) -> int:
-        return sum(1 for item in self.items if item.window)
+    def find_item_by_process(self, process_id: int) -> TrayedItem | None:
+        if not process_id:
+            return None
+        for item in self.items:
+            if item.process_id == process_id:
+                return item
+        return None
 
+    def find_reusable_item(self, process_id: int) -> TrayedItem | None:
+        if not process_id:
+            return None
+        for item in self.items:
+            if item.process_id != process_id:
+                continue
+            if not item.window or not user32.IsWindow(item.window):
+                return item
+        return None
+
+    def hidden_window_count(self) -> int:
+        return sum(1 for item in self.items if item.window and user32.IsWindow(item.window))
     def load_recent_apps(self) -> None:
         self.recent_apps.clear()
         try:
@@ -694,6 +1061,7 @@ class TrayPocketApp:
     def load_settings(self) -> None:
         self.play_sound_on_hide = False
         self.menu_language = CHINESE_MENU_LANGUAGE
+        self.show_item_tray_icons = False
         try:
             if not self.settings_file.exists():
                 return
@@ -705,20 +1073,24 @@ class TrayPocketApp:
                     self.play_sound_on_hide = value.lower() == "true"
                 elif key.lower() == MENU_LANGUAGE_KEY.lower() and value.lower() == CHINESE_MENU_LANGUAGE.lower():
                     self.menu_language = CHINESE_MENU_LANGUAGE
+                elif key.lower() == SHOW_ITEM_TRAY_ICONS_KEY.lower():
+                    self.show_item_tray_icons = value.lower() == "true"
         except OSError:
             self.play_sound_on_hide = False
             self.menu_language = CHINESE_MENU_LANGUAGE
+            self.show_item_tray_icons = False
 
     def save_settings(self) -> None:
         try:
             self.config_dir.mkdir(parents=True, exist_ok=True)
             self.settings_file.write_text(
-                f"{PLAY_SOUND_ON_HIDE_KEY}={self.play_sound_on_hide}\n{MENU_LANGUAGE_KEY}={self.menu_language}\n",
+                f"{PLAY_SOUND_ON_HIDE_KEY}={self.play_sound_on_hide}\n"
+                f"{MENU_LANGUAGE_KEY}={self.menu_language}\n"
+                f"{SHOW_ITEM_TRAY_ICONS_KEY}={self.show_item_tray_icons}\n",
                 encoding="utf-8",
             )
         except OSError:
             pass
-
     def toggle_startup(self) -> None:
         try:
             with winreg.OpenKey(
@@ -744,6 +1116,18 @@ class TrayPocketApp:
         self.save_settings()
         self.show_balloon("已开启隐藏提示音。" if self.play_sound_on_hide else "已关闭隐藏提示音。")
 
+    def toggle_item_tray_icons(self) -> None:
+        self.show_item_tray_icons = not self.show_item_tray_icons
+        for item in list(self.items):
+            if self.show_item_tray_icons:
+                self._add_item_tray_icon(item)
+            else:
+                self._remove_tray_icon(item.item_id)
+        self.save_settings()
+        if self.show_item_tray_icons:
+            self.show_balloon("已开启每个项目的独立托盘图标。")
+        else:
+            self.show_balloon("已收进 TrayPocket 面板，系统托盘只保留主图标。")
     def is_chinese_menu(self) -> bool:
         return self.menu_language.lower() == CHINESE_MENU_LANGUAGE.lower()
 
@@ -787,6 +1171,9 @@ class TrayPocketApp:
 
     def exit(self) -> None:
         self.disposed = True
+        if self.hwnd:
+            user32.KillTimer(self.hwnd, STATE_TIMER_ID)
+        self.close_collection_panel()
         self.restore_all_hidden_windows()
         for item in list(self.items):
             self.dispose_item(item)
@@ -794,8 +1181,6 @@ class TrayPocketApp:
         user32.UnregisterHotKey(self.hwnd, HOTKEY_ID)
         if self.hwnd:
             user32.DestroyWindow(self.hwnd)
-
-
 def short_tray_text(text: str) -> str:
     if not text:
         return APP_NAME
@@ -869,6 +1254,19 @@ def wait_for_main_window(process: subprocess.Popen, timeout_seconds: float) -> i
     return 0
 
 
+def is_process_running(process_id: int) -> bool:
+    if not process_id:
+        return False
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, process_id)
+    if not handle:
+        return False
+    try:
+        exit_code = wintypes.DWORD()
+        return bool(kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))) and exit_code.value == STILL_ACTIVE
+    finally:
+        kernel32.CloseHandle(handle)
+
+
 def executable_path_for_pid(pid: int) -> str:
     handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
     if not handle:
@@ -932,8 +1330,9 @@ def main(argv: list[str]) -> int:
     if already_running:
         if argv and send_args_to_existing_instance(argv):
             return 0
-        user32.MessageBoxW(None, "TrayPocket 已经在运行。请使用右下角托盘图标菜单。", APP_NAME, 0x40)
-        return 0
+        if user32.FindWindowW(WINDOW_CLASS, None):
+            user32.MessageBoxW(None, "TrayPocket 已经在运行。请使用右下角托盘图标菜单。", APP_NAME, 0x40)
+            return 0
 
     try:
         app = TrayPocketApp(argv)

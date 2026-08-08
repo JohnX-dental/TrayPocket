@@ -1,5 +1,7 @@
 # TrayPocket
 
+维护与发布：[@JohnX-dental](https://github.com/JohnX-dental)
+
 TrayPocket 是一个 Windows 系统托盘工具，用来把需要长期后台运行的普通桌面程序“一键收进右下角小图标”。
 
 它的交互灵感来自 [fcFn/traymond](https://github.com/fcFn/traymond)：把窗口隐藏到托盘，双击托盘图标恢复窗口。TrayPocket 现在提供 Python 版实现，并保留早期 C# WinForms 实现作为参考。
@@ -7,21 +9,25 @@ TrayPocket 是一个 Windows 系统托盘工具，用来把需要长期后台运
 ![TrayPocket 托盘菜单预览](docs/screenshot.svg)
 
 ## 功能
+- 双击 TrayPocket 主图标，打开内部“已收纳窗口”面板，集中查看、恢复或移除托管项目。
+- 默认只保留一个 TrayPocket 系统托盘图标，减少重复图标和 Windows 幽灵图标干扰。
+- 每秒校准托管窗口状态；程序自行弹出时会重新收纳，窗口重建时会复用原条目。
 
 - 选择任意 `.exe`，启动后自动隐藏到系统托盘。
 - 按 `Win + Shift + Z`，把当前前台窗口隐藏到托盘。
-- 双击被托管程序的小图标，恢复对应窗口。
+- 默认双击 TrayPocket 主图标打开面板并恢复窗口；如开启兼容设置，也可双击项目独立图标。
 - 右键 TrayPocket 主图标，可以从“最近程序”再次一键托盘运行。
 - 支持开机自动启动 TrayPocket。
 - 支持设置隐藏窗口时是否播放系统提示音。
 - 支持在设置中选择中文（简体）菜单。
-- 对没有主窗口的程序，会按后台进程托管，并提供结束进程/移除图标菜单。
+- 对没有主窗口的程序，会按后台进程托管，并在面板中提供结束进程或移除操作。
 
 ## 下载和安装
 
-推荐从 GitHub Releases 下载独立可执行文件 `TrayPocket-python-v0.3.1.exe`，下载后双击运行即可，不需要安装 Python。
+推荐从 GitHub Releases 下载独立可执行文件 `TrayPocket-python-v0.3.5.exe`，下载后双击运行即可，不需要安装 Python。
+> 请启动 `dist` 中的 Python 版文件；旧版 C# 可执行文件已移至 `legacy\TrayPocket-legacy.exe`，不包含“已收纳窗口”面板。
 
-如果你想查看或运行源码，也可以下载 Python 版压缩包 `TrayPocket-python-v0.3.0-windows.zip`，解压后运行：
+如果你想查看或运行源码，也可以下载 Python 版压缩包 `TrayPocket-python-v0.3.5-windows.zip`，解压后运行：
 
 ```powershell
 PowerShell -ExecutionPolicy Bypass -File .\run-python.ps1
@@ -78,6 +84,7 @@ TrayPocket 不需要安装程序。第一次运行时，如果 Windows 出现安
 3. 选择 `选择程序并托盘运行...`。
 4. 选择你希望保持后台运行的 `.exe`。
 5. 以后可从 `最近程序一键托盘运行` 快速启动。
+6. 双击 TrayPocket 主图标打开“已收纳窗口”面板，恢复、结束或移除项目。
 
 也可以用命令行直接发送程序：
 
