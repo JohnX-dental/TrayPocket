@@ -3,14 +3,18 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $venvPython = Join-Path $root ".venv\Scripts\python.exe"
 $source = Join-Path $root "src\traypocket.py"
+$icon = Join-Path $root "assets\traypocket-icon.ico"
 $buildDir = Join-Path $root "build\pyinstaller"
 $distDir = Join-Path $root "dist"
-$outputName = "TrayPocket-python-v0.3.1.exe"
+$outputName = "TrayPocket-python-v0.3.5.exe"
 $oneFileOutput = Join-Path $distDir "TrayPocket.exe"
 $versionedOutput = Join-Path $distDir $outputName
 
 if (-not (Test-Path $venvPython)) {
     throw "Virtual environment Python not found. Create .venv and install PyInstaller first."
+}
+if (-not (Test-Path $icon)) {
+    throw "Application icon not found: $icon"
 }
 
 & $venvPython -m PyInstaller `
@@ -18,6 +22,8 @@ if (-not (Test-Path $venvPython)) {
     --windowed `
     --noconfirm `
     --clean `
+    --icon $icon `
+    --add-data "$icon;assets" `
     --name TrayPocket `
     --distpath $distDir `
     --workpath $buildDir `
